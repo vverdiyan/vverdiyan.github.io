@@ -1,0 +1,994 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>The Dual Orchestra — Architecture of a Three-Voice Medical Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..900,0..100,0..1;1,9..144,300..900,0..100,0..1&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f1ece0;
+    --paper-2:#e8e1d1;
+    --paper-3:#dcd3bf;
+    --ink:#1a1612;
+    --ink-2:#3b342a;
+    --ink-3:#6c6253;
+    --rule:#2a231c;
+    --gold:#b88934;
+    --gold-soft:#d9b56b;
+
+    /* the three voices */
+    --opus:#1f3a5f;       /* deep ink blue — diagnostician */
+    --opus-soft:#bfcad9;
+    --codex:#8a2a1d;      /* oxblood — challenger */
+    --codex-soft:#dfb6ad;
+    --gemini:#3d6b4f;     /* forest sage — synthesizer */
+    --gemini-soft:#bccdbf;
+
+    --shadow: 0 1px 0 rgba(26,22,18,.06), 0 12px 28px -12px rgba(26,22,18,.18);
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Manrope", system-ui, sans-serif;
+    font-weight:400;
+    font-size:15px;
+    line-height:1.55;
+    letter-spacing:.005em;
+    -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(1200px 600px at 80% -10%, rgba(184,137,52,.08), transparent 60%),
+      radial-gradient(1000px 500px at -10% 110%, rgba(31,58,95,.07), transparent 60%),
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.10  0 0 0 0 0.08  0 0 0 0 0.06  0 0 0 0.045 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+
+  ::selection{background:var(--gold-soft);color:var(--ink)}
+
+  .wrap{max-width:1240px;margin:0 auto;padding:48px 56px 96px}
+
+  /* ───── masthead ───── */
+  .masthead{
+    border-top:2px solid var(--rule);
+    border-bottom:1px solid var(--rule);
+    padding:14px 0 16px;
+    display:grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items:center;
+    gap:24px;
+    font-family:"JetBrains Mono", monospace;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.2em;
+    color:var(--ink-2);
+  }
+  .masthead .right{text-align:right}
+  .masthead .center{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-weight:300;
+    font-size:13px;
+    text-transform:none;
+    letter-spacing:.04em;
+    color:var(--ink-3);
+  }
+
+  /* ───── hero ───── */
+  .hero{
+    padding:96px 0 72px;
+    border-bottom:1px solid var(--rule);
+    position:relative;
+  }
+  .hero .eyebrow{
+    font-family:"JetBrains Mono", monospace;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.32em;
+    color:var(--gold);
+    margin-bottom:26px;
+  }
+  .hero h1{
+    font-family:"Fraunces", serif;
+    font-weight:300;
+    font-size: clamp(56px, 8.5vw, 132px);
+    line-height:.92;
+    letter-spacing:-.025em;
+    margin:0 0 28px;
+    color:var(--ink);
+    font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 0;
+  }
+  .hero h1 em{
+    font-style:italic;
+    font-weight:300;
+    color:var(--codex);
+    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+  }
+  .hero .lede{
+    font-family:"Fraunces", serif;
+    font-weight:350;
+    font-size:22px;
+    line-height:1.45;
+    color:var(--ink-2);
+    max-width:780px;
+    margin:0;
+  }
+  .hero .lede b{font-weight:600;color:var(--ink)}
+
+  .hero-meta{
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap:0;
+    margin-top:64px;
+    border-top:1px solid var(--rule);
+  }
+  .hero-meta .cell{
+    border-right:1px solid var(--rule);
+    padding:18px 22px;
+    font-family:"JetBrains Mono", monospace;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.18em;
+    color:var(--ink-3);
+  }
+  .hero-meta .cell:last-child{border-right:none}
+  .hero-meta .cell .num{
+    display:block;
+    font-family:"Fraunces", serif;
+    font-weight:300;
+    font-size:42px;
+    color:var(--ink);
+    letter-spacing:-.02em;
+    margin-bottom:6px;
+    text-transform:none;
+  }
+
+  /* ───── section header ───── */
+  .section{padding:88px 0 12px}
+  .section-head{
+    display:grid;
+    grid-template-columns: 80px 1fr;
+    gap:32px;
+    margin-bottom:48px;
+    align-items:baseline;
+  }
+  .section-head .num{
+    font-family:"JetBrains Mono", monospace;
+    font-size:13px;
+    color:var(--gold);
+    letter-spacing:.2em;
+    padding-top:10px;
+  }
+  .section-head h2{
+    font-family:"Fraunces", serif;
+    font-weight:350;
+    font-size:48px;
+    line-height:1;
+    letter-spacing:-.02em;
+    margin:0 0 8px;
+  }
+  .section-head h2 em{font-style:italic;color:var(--ink-3);font-weight:300}
+  .section-head .sub{
+    color:var(--ink-3);
+    max-width:620px;
+    font-size:15px;
+  }
+
+  /* ───── three voices ───── */
+  .voices{
+    display:grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap:0;
+    border-top:2px solid var(--rule);
+    border-bottom:2px solid var(--rule);
+  }
+  .voice{
+    padding:36px 32px 40px;
+    border-right:1px solid var(--rule);
+    position:relative;
+    background:linear-gradient(to bottom, transparent 0%, rgba(0,0,0,.012) 100%);
+  }
+  .voice:last-child{border-right:none}
+  .voice .role{
+    font-family:"JetBrains Mono", monospace;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.28em;
+    margin-bottom:18px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .voice .role .num{color:var(--ink-3)}
+  .voice .name{
+    font-family:"Fraunces", serif;
+    font-weight:300;
+    font-size:42px;
+    line-height:.95;
+    letter-spacing:-.02em;
+    margin:0 0 4px;
+    font-variation-settings:"opsz" 144;
+  }
+  .voice .family{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-size:18px;
+    color:var(--ink-3);
+    margin-bottom:24px;
+  }
+  .voice .swatch{
+    height:6px;
+    width:100%;
+    margin-bottom:24px;
+  }
+  .voice.opus .swatch{background:var(--opus)}
+  .voice.codex .swatch{background:var(--codex)}
+  .voice.gemini .swatch{background:var(--gemini)}
+  .voice.opus .name{color:var(--opus)}
+  .voice.codex .name{color:var(--codex)}
+  .voice.gemini .name{color:var(--gemini)}
+
+  .voice .desc{
+    font-size:14.5px;
+    color:var(--ink-2);
+    line-height:1.6;
+    margin-bottom:24px;
+  }
+  .voice .props{
+    border-top:1px solid var(--rule);
+    padding-top:18px;
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:14px 18px;
+    font-family:"JetBrains Mono", monospace;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:.14em;
+    color:var(--ink-3);
+  }
+  .voice .props .k{color:var(--ink-3)}
+  .voice .props .v{color:var(--ink);font-weight:500;letter-spacing:.08em}
+  .voice .quote{
+    margin-top:28px;
+    padding:18px 0 0;
+    border-top:1px dashed var(--ink-3);
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-size:16px;
+    line-height:1.45;
+    color:var(--ink-2);
+  }
+  .voice .quote::before{
+    content:"“";
+    font-size:38px;
+    line-height:0;
+    vertical-align:-12px;
+    margin-right:4px;
+    color:var(--gold);
+  }
+
+  /* ───── score / 8 phases ───── */
+  .score{
+    margin-top:0;
+    border:1px solid var(--rule);
+    background:var(--paper-2);
+    padding:36px 32px 28px;
+    position:relative;
+  }
+  .score-grid{
+    display:grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap:0;
+    position:relative;
+  }
+  .phase{
+    border-right:1px solid var(--rule);
+    padding:0 14px 0 14px;
+    min-height:280px;
+    display:flex;
+    flex-direction:column;
+    position:relative;
+  }
+  .phase:last-child{border-right:none}
+  .phase .pnum{
+    font-family:"JetBrains Mono", monospace;
+    font-size:11px;
+    color:var(--gold);
+    letter-spacing:.18em;
+    margin-bottom:8px;
+  }
+  .phase .ptitle{
+    font-family:"Fraunces", serif;
+    font-weight:400;
+    font-size:18px;
+    line-height:1.1;
+    letter-spacing:-.01em;
+    margin:0 0 12px;
+    min-height:40px;
+  }
+  .phase .pbody{
+    font-size:12.5px;
+    color:var(--ink-2);
+    line-height:1.5;
+    flex:1;
+  }
+  .phase .pwho{
+    margin-top:14px;
+    padding-top:12px;
+    border-top:1px solid var(--ink-3);
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+  .chip{
+    font-family:"JetBrains Mono", monospace;
+    font-size:9.5px;
+    text-transform:uppercase;
+    letter-spacing:.14em;
+    padding:3px 7px;
+    border:1px solid var(--ink);
+    border-radius:2px;
+    background:var(--paper);
+    color:var(--ink);
+  }
+  .chip.opus{border-color:var(--opus);color:var(--opus)}
+  .chip.codex{border-color:var(--codex);color:var(--codex)}
+  .chip.gemini{border-color:var(--gemini);color:var(--gemini)}
+  .chip.you{border-color:var(--gold);color:var(--gold)}
+  .chip.user{border-color:var(--ink);color:var(--ink);background:var(--paper-3)}
+
+  /* parallel marker */
+  .phase.parallel{
+    background:
+      repeating-linear-gradient(135deg,
+        rgba(184,137,52,.05) 0,
+        rgba(184,137,52,.05) 8px,
+        transparent 8px,
+        transparent 16px);
+  }
+  .phase.loop{
+    background:
+      repeating-linear-gradient(45deg,
+        rgba(138,42,29,.06) 0,
+        rgba(138,42,29,.06) 8px,
+        transparent 8px,
+        transparent 16px);
+  }
+  .phase.checkpoint{
+    background:rgba(184,137,52,.10);
+  }
+
+  .score-rail{
+    margin-top:28px;
+    padding-top:18px;
+    border-top:2px solid var(--rule);
+    display:flex;
+    gap:24px;
+    align-items:center;
+    flex-wrap:wrap;
+    font-family:"JetBrains Mono", monospace;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:.18em;
+    color:var(--ink-3);
+  }
+  .legend-mark{
+    display:inline-block;
+    width:24px;
+    height:10px;
+    margin-right:8px;
+    vertical-align:middle;
+    border:1px solid var(--rule);
+  }
+  .legend-mark.par{background:repeating-linear-gradient(135deg,rgba(184,137,52,.5) 0,rgba(184,137,52,.5) 4px,transparent 4px,transparent 8px)}
+  .legend-mark.loo{background:repeating-linear-gradient(45deg,rgba(138,42,29,.5) 0,rgba(138,42,29,.5) 4px,transparent 4px,transparent 8px)}
+  .legend-mark.chk{background:rgba(184,137,52,.45)}
+
+  /* ───── convergence loop ───── */
+  .loop-wrap{
+    display:grid;
+    grid-template-columns: 5fr 4fr;
+    gap:48px;
+    align-items:start;
+  }
+  .loop-svg{
+    width:100%;
+    height:auto;
+    border:1px solid var(--rule);
+    background:var(--paper-2);
+    padding:18px;
+  }
+  .loop-text h3{
+    font-family:"Fraunces", serif;
+    font-weight:400;
+    font-size:24px;
+    margin:0 0 8px;
+    letter-spacing:-.01em;
+  }
+  .loop-text p{margin:0 0 14px;color:var(--ink-2)}
+
+  .loop-signals{
+    margin-top:22px;
+    border-top:1px solid var(--rule);
+  }
+  .signal{
+    display:grid;
+    grid-template-columns: 28px 1fr;
+    gap:14px;
+    padding:18px 0;
+    border-bottom:1px solid var(--paper-3);
+  }
+  .signal:last-child{border-bottom:none}
+  .signal .glyph{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-size:28px;
+    line-height:1;
+    color:var(--codex);
+  }
+  .signal h4{
+    margin:0 0 4px;
+    font-family:"Manrope";
+    font-weight:600;
+    font-size:13.5px;
+    letter-spacing:.02em;
+    text-transform:uppercase;
+  }
+  .signal p{font-size:13.5px;color:var(--ink-2);margin:0}
+
+  /* ───── anti-anchoring ───── */
+  .anti{
+    display:grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap:56px;
+    align-items:start;
+  }
+  .anti-left h3{
+    font-family:"Fraunces", serif;
+    font-weight:300;
+    font-size:64px;
+    line-height:.92;
+    letter-spacing:-.025em;
+    margin:0 0 18px;
+    font-variation-settings:"opsz" 144;
+  }
+  .anti-left h3 em{
+    font-style:italic;
+    color:var(--gold);
+    font-variation-settings:"opsz" 144,"WONK" 1;
+  }
+  .anti-left p{font-size:16px;color:var(--ink-2);max-width:520px}
+  .anti-left .layers{
+    margin-top:32px;
+    border-top:1px solid var(--rule);
+  }
+  .layer{
+    padding:18px 0;
+    border-bottom:1px solid var(--paper-3);
+    display:grid;
+    grid-template-columns: 140px 1fr 80px;
+    gap:18px;
+    align-items:baseline;
+  }
+  .layer:last-child{border-bottom:none}
+  .layer .who{
+    font-family:"JetBrains Mono", monospace;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.18em;
+  }
+  .layer .who.opus{color:var(--opus)}
+  .layer .who.codex{color:var(--codex)}
+  .layer .who.gemini{color:var(--gemini)}
+  .layer .who.you{color:var(--gold)}
+  .layer .what{font-size:14px;color:var(--ink-2)}
+  .layer .count{
+    text-align:right;
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-size:24px;
+    color:var(--ink);
+  }
+
+  .constraints{
+    display:grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap:0;
+    border:1px solid var(--rule);
+    background:var(--paper-2);
+  }
+  .constraint{
+    padding:14px 16px;
+    border-bottom:1px solid var(--paper-3);
+    border-right:1px solid var(--paper-3);
+    display:grid;
+    grid-template-columns: 38px 1fr;
+    gap:10px;
+    align-items:start;
+  }
+  .constraint:nth-child(2n){border-right:none}
+  .constraint .id{
+    font-family:"JetBrains Mono", monospace;
+    font-weight:700;
+    font-size:11px;
+    color:var(--gold);
+    letter-spacing:.1em;
+    padding-top:1px;
+  }
+  .constraint .body{font-size:12.5px;color:var(--ink-2);line-height:1.4}
+  .constraint .body b{color:var(--ink);font-weight:600}
+
+  /* ───── flow / colophon ───── */
+  .principles{
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap:0;
+    border-top:1px solid var(--rule);
+    border-bottom:1px solid var(--rule);
+  }
+  .principle{
+    padding:24px 24px 28px;
+    border-right:1px solid var(--rule);
+  }
+  .principle:last-child{border-right:none}
+  .principle .pn{
+    font-family:"Fraunces", serif;
+    font-weight:300;
+    font-style:italic;
+    font-size:38px;
+    color:var(--ink-3);
+    line-height:1;
+    margin-bottom:12px;
+  }
+  .principle h4{
+    font-family:"Fraunces", serif;
+    font-weight:400;
+    font-size:19px;
+    margin:0 0 8px;
+    letter-spacing:-.01em;
+    line-height:1.2;
+  }
+  .principle p{margin:0;font-size:13.5px;color:var(--ink-2)}
+
+  /* footer */
+  .colophon{
+    margin-top:80px;
+    padding:32px 0 0;
+    border-top:2px solid var(--rule);
+    display:grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap:32px;
+    font-family:"JetBrains Mono", monospace;
+    font-size:11px;
+    color:var(--ink-3);
+    letter-spacing:.12em;
+    text-transform:uppercase;
+  }
+  .colophon b{color:var(--ink);font-weight:500}
+
+  /* reveal */
+  @keyframes rise{
+    from{opacity:0;transform:translateY(14px)}
+    to{opacity:1;transform:translateY(0)}
+  }
+  .rise{animation:rise .9s cubic-bezier(.2,.7,.2,1) both}
+  .d1{animation-delay:.05s}
+  .d2{animation-delay:.18s}
+  .d3{animation-delay:.32s}
+  .d4{animation-delay:.46s}
+  .d5{animation-delay:.6s}
+
+  @media (max-width: 1100px){
+    .voices{grid-template-columns:1fr}
+    .voice{border-right:none;border-bottom:1px solid var(--rule)}
+    .score-grid{grid-template-columns:repeat(2,1fr)}
+    .phase{border-right:1px solid var(--rule);border-bottom:1px solid var(--rule);min-height:auto;padding:20px 16px}
+    .loop-wrap{grid-template-columns:1fr}
+    .anti{grid-template-columns:1fr}
+    .principles{grid-template-columns:1fr}
+    .principle{border-right:none;border-bottom:1px solid var(--rule)}
+    .colophon{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- masthead -->
+  <header class="masthead">
+    <div class="left">vv-med-dual-orchestra · v3</div>
+    <div class="center">An Architecture in Three Voices</div>
+    <div class="right">Folio 01 / Field Schematic</div>
+  </header>
+
+  <!-- hero -->
+  <section class="hero">
+    <div class="eyebrow rise d1">A Score for Three Model Families</div>
+    <h1 class="rise d2">The&nbsp;Dual<br/><em>Orchestra.</em></h1>
+    <p class="lede rise d3">
+      A claude-led panel that cross-examines a clinical case through <b>three independent reasoning lineages</b> —
+      Anthropic's Opus, OpenAI's Codex, Google's Gemini — and refuses to settle until probability shifts,
+      constraint violations, and information gain all agree the deliberation is done.
+      Three voices. Eight phases. Four rounds, hard cap.
+    </p>
+
+    <div class="hero-meta">
+      <div class="cell"><span class="num">3</span>model families</div>
+      <div class="cell"><span class="num">8</span>pipeline phases</div>
+      <div class="cell"><span class="num">4</span>rounds, hard cap</div>
+      <div class="cell"><span class="num">20</span>anti-anchoring constraints</div>
+    </div>
+  </section>
+
+  <!-- THREE VOICES -->
+  <section class="section">
+    <div class="section-head">
+      <div class="num">I.</div>
+      <div>
+        <h2>The Three <em>Voices.</em></h2>
+        <div class="sub">Each agent is selected for what it cannot share with the others: its training lineage, its memory state, its access privileges. Correlated blind spots are the failure mode the orchestra exists to defeat.</div>
+      </div>
+    </div>
+
+    <div class="voices">
+      <div class="voice opus">
+        <div class="role"><span>Voice 01 / Diagnostician</span><span class="num">OPUS</span></div>
+        <div class="swatch"></div>
+        <h3 class="name">Diagnostician</h3>
+        <div class="family">Claude Opus 4.6 · subagent</div>
+        <div class="desc">
+          Spawned with <b>zero memory</b> of prior rounds, prior probabilities, the hypothesis ledger, or any other agent's output. Derives its differential from evidence alone and cannot be anchored by the panel's prior consensus.
+        </div>
+        <div class="props">
+          <div class="k">Memory</div><div class="v">0-context</div>
+          <div class="k">Access</div><div class="v">Dossier only</div>
+          <div class="k">Self-check</div><div class="v">19-row table</div>
+          <div class="k">Phenotypes</div><div class="v">7 stacked</div>
+        </div>
+        <div class="quote">Given only the evidence, what is the differential — and why?</div>
+      </div>
+
+      <div class="voice codex">
+        <div class="role"><span>Voice 02 / Challenger</span><span class="num">CODEX</span></div>
+        <div class="swatch"></div>
+        <h3 class="name">Challenger</h3>
+        <div class="family">OpenAI Codex CLI · effort=high</div>
+        <div class="desc">
+          The only agent allowed to <b>read the actual chart</b>. Runs the dossier against source files, hunts the lab archive (3,426 rows · 1,164 unique tests · 2012–2024) for "never-done" claims, and rebuts the Diagnostician with citations.
+        </div>
+        <div class="props">
+          <div class="k">Memory</div><div class="v">Source-grounded</div>
+          <div class="k">Access</div><div class="v">Patient files</div>
+          <div class="k">Mode</div><div class="v">Adversarial</div>
+          <div class="k">Returns</div><div class="v">R1 + R2</div>
+        </div>
+        <div class="quote">Where does the dossier disagree with the chart? Show me line numbers.</div>
+      </div>
+
+      <div class="voice gemini">
+        <div class="role"><span>Voice 03 / Synthesizer</span><span class="num">GEMINI</span></div>
+        <div class="swatch"></div>
+        <h3 class="name">Synthesizer</h3>
+        <div class="family">Gemini 3.1 Pro · API</div>
+        <div class="desc">
+          A third reasoning lineage that integrates the Diagnostician's hypotheses with the Challenger's rebuttals — and, because it shares neither training data nor memory state with the other two, supplies <b>independent integration</b> rather than echo.
+        </div>
+        <div class="props">
+          <div class="k">Memory</div><div class="v">Stateless API</div>
+          <div class="k">Access</div><div class="v">Both R1 outputs</div>
+          <div class="k">Self-check</div><div class="v">7 critical</div>
+          <div class="k">Role</div><div class="v">Integrator</div>
+        </div>
+        <div class="quote">Where the two voices clash, which evidence is load-bearing — and where do they miss?</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE SCORE / 8 PHASES -->
+  <section class="section">
+    <div class="section-head">
+      <div class="num">II.</div>
+      <div>
+        <h2>The <em>Score.</em></h2>
+        <div class="sub">Eight phases, read left to right. Diagnostician and Challenger run in parallel inside the panel rounds. The doctor-in-the-loop is non-skippable, even on quick-depth runs.</div>
+      </div>
+    </div>
+
+    <div class="score">
+      <div class="score-grid">
+
+        <div class="phase">
+          <div class="pnum">PHASE 01</div>
+          <div class="ptitle">Evidence Gathering</div>
+          <div class="pbody">Codex reads the patient file corpus and produces an evidence dossier. Mandatory lab-archive sweep verifies every "never-done" claim against the 3,426-row xlsx before the panel sees the dossier.</div>
+          <div class="pwho"><span class="chip codex">Codex</span></div>
+        </div>
+
+        <div class="phase parallel">
+          <div class="pnum">PHASE 02</div>
+          <div class="ptitle">Panel · Round 1</div>
+          <div class="pbody">Diagnostician (0-memory) and Challenger (source-grounded) launch in <b>parallel, independent</b>. Synthesizer integrates after both return. No agent sees another's output before producing its own.</div>
+          <div class="pwho"><span class="chip opus">Opus</span><span class="chip codex">Codex</span><span class="chip gemini">Gemini</span></div>
+        </div>
+
+        <div class="phase">
+          <div class="pnum">PHASE 03</div>
+          <div class="ptitle">Verification</div>
+          <div class="pbody">Optional. Codex fact-checks decision-critical lab values, dates, and findings cited by panel agents. Skipped on quick-depth; required on full-depth.</div>
+          <div class="pwho"><span class="chip codex">Codex</span></div>
+        </div>
+
+        <div class="phase loop">
+          <div class="pnum">PHASE 04</div>
+          <div class="ptitle">Socratic R2+ <span style="color:var(--codex)">↻</span></div>
+          <div class="pbody">Multi-round dialectic. Diagnostician returns 0-memory but with prior probability bands so it can record shifts. Challenger R2 rebuts the rebuttals. Synthesizer R2 integrates. <b>Hard cap: 4 rounds.</b></div>
+          <div class="pwho"><span class="chip opus">Opus</span><span class="chip codex">Codex</span><span class="chip gemini">Gemini</span></div>
+        </div>
+
+        <div class="phase checkpoint">
+          <div class="pnum">PHASE 05</div>
+          <div class="ptitle">Doctor-in-the-Loop</div>
+          <div class="pbody">Top 3–5 diagnoses with probability bands, key disagreements, and the single most important unresolved question. The treating physician can <b>redirect, add information, or proceed</b>. Always included.</div>
+          <div class="pwho"><span class="chip user">Doctor</span></div>
+        </div>
+
+        <div class="phase">
+          <div class="pnum">PHASE 06</div>
+          <div class="ptitle">Practicality</div>
+          <div class="pbody">Codex compiles drug interactions, logistics, and a time-phased action plan over the converged differential. Passed through the practicality contract before reaching synthesis.</div>
+          <div class="pwho"><span class="chip codex">Codex</span></div>
+        </div>
+
+        <div class="phase">
+          <div class="pnum">PHASE 07</div>
+          <div class="ptitle">Final Synthesis</div>
+          <div class="pbody">The orchestrator (you) reconciles all rounds into a single document — preserving genuine disagreements, recording probability_history per diagnosis, flagging verification contradictions, noting information gain.</div>
+          <div class="pwho"><span class="chip you">Orchestrator</span></div>
+        </div>
+
+        <div class="phase">
+          <div class="pnum">PHASE 08</div>
+          <div class="ptitle">Report</div>
+          <div class="pbody">Self-contained HTML dashboard. Phenotype coverage matrix with stacking row, treatment-response truth table, decision tree per test, agent-colored insight cards. Thin reports = failure state.</div>
+          <div class="pwho"><span class="chip you">Orchestrator</span></div>
+        </div>
+
+      </div>
+
+      <div class="score-rail">
+        <span><span class="legend-mark par"></span>Parallel dispatch</span>
+        <span><span class="legend-mark loo"></span>Iterative loop</span>
+        <span><span class="legend-mark chk"></span>Doctor checkpoint</span>
+        <span style="margin-left:auto">Phase order is canonical · skipping is depth-controlled</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONVERGENCE LOOP -->
+  <section class="section">
+    <div class="section-head">
+      <div class="num">III.</div>
+      <div>
+        <h2>The <em>Loop.</em></h2>
+        <div class="sub">The Socratic round is not a fixed-iteration loop. It is convergence-driven. Three signals decide whether to keep going or stop.</div>
+      </div>
+    </div>
+
+    <div class="loop-wrap">
+
+      <svg class="loop-svg" viewBox="0 0 540 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Convergence loop diagram">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2a231c"/>
+          </marker>
+          <marker id="arrowGold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#b88934"/>
+          </marker>
+          <marker id="arrowCodex" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#8a2a1d"/>
+          </marker>
+        </defs>
+
+        <!-- title -->
+        <text x="20" y="30" font-family="JetBrains Mono" font-size="11" letter-spacing="2" fill="#6c6253">DIALECTIC · ROUND N</text>
+        <text x="520" y="30" text-anchor="end" font-family="JetBrains Mono" font-size="11" letter-spacing="2" fill="#b88934">CAP = 4</text>
+
+        <!-- three voice nodes -->
+        <g>
+          <rect x="40" y="80" width="140" height="58" fill="#f1ece0" stroke="#1f3a5f" stroke-width="2"/>
+          <text x="110" y="105" text-anchor="middle" font-family="Fraunces" font-style="italic" font-size="18" fill="#1f3a5f">Diagnostician</text>
+          <text x="110" y="124" text-anchor="middle" font-family="JetBrains Mono" font-size="9" letter-spacing="2" fill="#1f3a5f">OPUS · 0-MEMORY</text>
+        </g>
+        <g>
+          <rect x="200" y="80" width="140" height="58" fill="#f1ece0" stroke="#8a2a1d" stroke-width="2"/>
+          <text x="270" y="105" text-anchor="middle" font-family="Fraunces" font-style="italic" font-size="18" fill="#8a2a1d">Challenger</text>
+          <text x="270" y="124" text-anchor="middle" font-family="JetBrains Mono" font-size="9" letter-spacing="2" fill="#8a2a1d">CODEX · SOURCE</text>
+        </g>
+        <g>
+          <rect x="360" y="80" width="140" height="58" fill="#f1ece0" stroke="#3d6b4f" stroke-width="2"/>
+          <text x="430" y="105" text-anchor="middle" font-family="Fraunces" font-style="italic" font-size="18" fill="#3d6b4f">Synthesizer</text>
+          <text x="430" y="124" text-anchor="middle" font-family="JetBrains Mono" font-size="9" letter-spacing="2" fill="#3d6b4f">GEMINI · API</text>
+        </g>
+
+        <!-- parallel dispatch -->
+        <line x1="180" y1="109" x2="200" y2="109" stroke="#2a231c" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="340" y1="109" x2="360" y2="109" stroke="#2a231c" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <text x="270" y="74" text-anchor="middle" font-family="JetBrains Mono" font-size="9" letter-spacing="2" fill="#6c6253">PARALLEL · INDEPENDENT</text>
+
+        <!-- convergence node -->
+        <g>
+          <rect x="200" y="200" width="140" height="58" fill="#dcd3bf" stroke="#1a1612" stroke-width="2"/>
+          <text x="270" y="225" text-anchor="middle" font-family="Fraunces" font-size="16" fill="#1a1612">Convergence Check</text>
+          <text x="270" y="244" text-anchor="middle" font-family="JetBrains Mono" font-size="9" letter-spacing="2" fill="#6c6253">3 SIGNALS</text>
+        </g>
+
+        <!-- arrows down to convergence -->
+        <path d="M 110 138 Q 110 175 200 215" stroke="#1f3a5f" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+        <line x1="270" y1="138" x2="270" y2="200" stroke="#8a2a1d" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <path d="M 430 138 Q 430 175 340 215" stroke="#3d6b4f" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+        <!-- signal labels -->
+        <g font-family="JetBrains Mono" font-size="9.5" fill="#3b342a">
+          <text x="20" y="290">↻ probability stability</text>
+          <text x="20" y="308">↻ unresolved violations</text>
+          <text x="20" y="326">↻ information gain</text>
+        </g>
+
+        <!-- decision branches -->
+        <text x="20" y="370" font-family="JetBrains Mono" font-size="10" letter-spacing="1.5" fill="#b88934">CONTINUE → R+1</text>
+        <text x="520" y="370" text-anchor="end" font-family="JetBrains Mono" font-size="10" letter-spacing="1.5" fill="#3d6b4f">STOP → PHASE 5</text>
+
+        <!-- loop-back arrow -->
+        <path d="M 200 229 Q 80 280 80 160 Q 80 90 110 80" stroke="#b88934" stroke-width="1.5" fill="none" stroke-dasharray="4 4" marker-end="url(#arrowGold)"/>
+        <text x="60" y="200" font-family="Fraunces" font-style="italic" font-size="13" fill="#b88934">re-dispatch</text>
+
+        <!-- forward arrow -->
+        <path d="M 340 229 Q 460 280 480 320" stroke="#3d6b4f" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+        <!-- cap warning -->
+        <text x="270" y="395" text-anchor="middle" font-family="Fraunces" font-style="italic" font-size="13" fill="#8a2a1d">If R=4 and unresolved → flag, advance anyway.</text>
+      </svg>
+
+      <div class="loop-text">
+        <h3>Three signals. One judgment call.</h3>
+        <p>The orchestrator does not stop on a counter; it stops when the reasoning is solid. Convergence is informed by signal — not formula.</p>
+
+        <div class="loop-signals">
+          <div class="signal">
+            <div class="glyph">σ</div>
+            <div>
+              <h4>Probability stability</h4>
+              <p>Top-5 max shift &lt; 0.05 across rounds suggests settling. A large shift driven by genuinely new evidence is healthy, not a reason to keep looping.</p>
+            </div>
+          </div>
+          <div class="signal">
+            <div class="glyph">¬</div>
+            <div>
+              <h4>Unresolved violations</h4>
+              <p>If the Challenger flagged a critical constraint violation on a top hypothesis and the Diagnostician hasn't addressed or conceded it, keep going.</p>
+            </div>
+          </div>
+          <div class="signal">
+            <div class="glyph">∆</div>
+            <div>
+              <h4>Information gain</h4>
+              <p>Each round must produce at least one hypothesis or mechanistic connection not present in the prior round. If a round adds nothing, stop. Don't iterate for iteration's sake.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ANTI-ANCHORING -->
+  <section class="section">
+    <div class="section-head">
+      <div class="num">IV.</div>
+      <div>
+        <h2>Anti-anchoring is <em>structural.</em></h2>
+        <div class="sub">The 20 anti-anchoring constraints don't live in one big checklist. They are propagated to each agent at the depth that agent can act on — prevention, verification, integration, final review.</div>
+      </div>
+    </div>
+
+    <div class="anti">
+      <div class="anti-left">
+        <h3>Each subagent<br/>starts <em>fresh.</em></h3>
+        <p>The hypothesis ledger never enters subagent prompts. The Diagnostician derives its differential from evidence alone. Same evidence, fresh mind, every round — that is what makes the panel adversarial rather than echoing.</p>
+
+        <div class="layers">
+          <div class="layer">
+            <div class="who opus">Diagnostician</div>
+            <div class="what">Compact 19-constraint self-check table — <b>prevention layer</b>.</div>
+            <div class="count">19</div>
+          </div>
+          <div class="layer">
+            <div class="who codex">Challenger</div>
+            <div class="what">Full verbose checklist with check procedures — <b>verification layer</b>.</div>
+            <div class="count">19</div>
+          </div>
+          <div class="layer">
+            <div class="who gemini">Synthesizer</div>
+            <div class="what">Seven most critical constraints for cross-agent integration.</div>
+            <div class="count">7</div>
+          </div>
+          <div class="layer">
+            <div class="who you">Orchestrator</div>
+            <div class="what">Full set, applied as the final review pass before reconciliation.</div>
+            <div class="count">20</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="constraints">
+        <div class="constraint"><div class="id">U4</div><div class="body"><b>Same-source restatements</b> count as one. Two papers citing one preprint do not double the evidence.</div></div>
+        <div class="constraint"><div class="id">U5</div><div class="body"><b>Treatment response</b> is pathway evidence, not diagnosis proof.</div></div>
+        <div class="constraint"><div class="id">U8</div><div class="body"><b>Laterality</b> is high-signal — symmetric vs. lateralized changes the differential.</div></div>
+        <div class="constraint"><div class="id">U10</div><div class="body"><b>Normal CRP</b> does not clear inflammation. Compartmentalized inflammation is silent on serum markers.</div></div>
+        <div class="constraint"><div class="id">U13</div><div class="body"><b>Treatment specificity rank:</b> IVIG &gt; prednisone &gt; cholestyramine &gt; maraviroc.</div></div>
+        <div class="constraint"><div class="id">U14</div><div class="body"><b>Anti-recycling.</b> Don't recommend treatments already tried and failed without explaining what changed.</div></div>
+        <div class="constraint"><div class="id">P14</div><div class="body"><b>JAK1 response</b> is high-weight. Carries significant Bayesian update on mechanism.</div></div>
+        <div class="constraint"><div class="id">P17</div><div class="body"><b>Pre-2021 continuous phase</b> must be respected as a single window, not retrofitted.</div></div>
+        <div class="constraint"><div class="id">U+</div><div class="body"><b>Negative evidence</b> is high-signal. What's absent is as diagnostic as what's present.</div></div>
+        <div class="constraint"><div class="id">U+</div><div class="body"><b>Hypothesis stacking required.</b> Top-3 must explicitly address whether they coexist, not just compete.</div></div>
+        <div class="constraint"><div class="id">U+</div><div class="body"><b>Quantitative clues</b> get quantitative attention. Build models that explain numbers, not just direction.</div></div>
+        <div class="constraint"><div class="id">U+</div><div class="body"><b>User analysis is a floor.</b> The orchestra must go beyond it — never just agree with the user's framing.</div></div>
+        <div class="constraint"><div class="id">U+</div><div class="body"><b>Anti-simplicity bias.</b> In multi-system cases, the simplest textbook answer is often wrong.</div></div>
+        <div class="constraint"><div class="id">U+</div><div class="body"><b>Treatment response inversion.</b> A failed treatment falsifies its mechanism — record it.</div></div>
+        <div class="constraint"><div class="id">U+</div><div class="body"><b>Same-source counting</b> across agents — orchestra-level deduplication, not just per-agent.</div></div>
+        <div class="constraint"><div class="id">U+</div><div class="body"><b>Minimum novelty per round</b> — at least one new hypothesis or mechanistic link, or stop.</div></div>
+        <div class="constraint"><div class="id">U+</div><div class="body"><b>PubMed search mandatory</b> — three targeted queries minimum before round close.</div></div>
+        <div class="constraint"><div class="id">U+</div><div class="body"><b>Codex is data ground truth.</b> Subagent claims yield to source-verified findings.</div></div>
+        <div class="constraint"><div class="id">U+</div><div class="body"><b>Disagreements preserved.</b> Smoothing into false consensus is a reconciliation failure.</div></div>
+        <div class="constraint"><div class="id">U+</div><div class="body"><b>The doctor decides.</b> The checkpoint exists because the treating physician knows things the panel does not.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRINCIPLES -->
+  <section class="section">
+    <div class="section-head">
+      <div class="num">V.</div>
+      <div>
+        <h2>Twelve principles, <em>three picked.</em></h2>
+        <div class="sub">The skill carries twelve key principles. These three describe its philosophy of work better than the other nine.</div>
+      </div>
+    </div>
+
+    <div class="principles">
+      <div class="principle">
+        <div class="pn">i.</div>
+        <h4>You are smarter than the pipeline.</h4>
+        <p>The orchestrator adapts the workflow as findings emerge. Phases skip, repeat, or reorder when the evidence demands it. The score is canonical, not rigid.</p>
+      </div>
+      <div class="principle">
+        <div class="pn">ii.</div>
+        <h4>Panel disagreements are diagnostic gold.</h4>
+        <p>Push on them. Don't smooth them. The reconciliation that papers over a real disagreement is hiding the most informative signal the orchestra produced.</p>
+      </div>
+      <div class="principle">
+        <div class="pn">iii.</div>
+        <h4>Information gain matters.</h4>
+        <p>Each round must produce new insights — a connection, a probability shift, a previously unidentified gap. If a round adds nothing, the orchestra is restating, not deliberating. Stop.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- COLOPHON -->
+  <footer class="colophon">
+    <div>
+      <b>Set in</b><br/>Fraunces · Manrope · JetBrains Mono
+    </div>
+    <div>
+      <b>Architecture</b><br/>Self-contained skill at<br/>~/.claude/skills/vv-med-dual-orchestra
+    </div>
+    <div>
+      <b>Folio 01</b><br/>Field schematic of the<br/>dual orchestra · 2026
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>
