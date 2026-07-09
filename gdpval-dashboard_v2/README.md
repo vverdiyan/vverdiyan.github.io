@@ -7,10 +7,11 @@ This folder is the v2 GitHub Pages copy intended for:
 Unofficial viewer for the public GDPval gold subset.
 
 This public-safe build:
-- keeps the dashboard UI and leaderboard/task metadata
 - uses Artificial Analysis GDPval-AA v2 for the current overall model leaderboard
-- retains the archived OpenAI per-occupation score rows for jaggedness and subfield views
-- opens official source files from Hugging Face
+- uses Artificial Analysis GDPval-AA v2 for current cost, token, and turn rows where published
+- uses Hugging Face `openai/gdpval` for tasks, occupations, rubrics, and file links
+- intentionally does not show archived OpenAI per-occupation model score rows
+- opens source files from Hugging Face
 - disables inline extracted preview payloads
 - avoids bundling the larger derived preview corpus used in the private working copy
 

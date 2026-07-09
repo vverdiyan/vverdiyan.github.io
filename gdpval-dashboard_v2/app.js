@@ -25,22 +25,14 @@ refs.occupationField = refs.occupationSelect?.closest('.field') || null;
 refs.searchField = refs.occupationSearch?.closest('.field') || null;
 
 const currentLeaderboardModels = [...(dataset.models || [])].sort((a, b) => (a.overallRank || 9999) - (b.overallRank || 9999));
-const archivedModels = dataset.legacyModels || dataset.models || [];
-const visibleModels = archivedModels.filter((model) => !model.hidden);
 const currentLeaderboardSource = dataset.leaderboards?.current || {};
-const archivedLeaderboardSource = dataset.leaderboards?.occupationScores || {};
-const defaultPrimaryModelId = visibleModels.find((model) => model.label === 'GPT-5.2')?.modelId || visibleModels[0]?.modelId || '';
-const defaultSecondaryModelId = visibleModels.find((model) => model.label === 'Claude Opus 4.5')?.modelId
-  || visibleModels.find((model) => model.modelId !== defaultPrimaryModelId)?.modelId
-  || '';
+const currentMetrics = dataset.currentMetrics || {};
 
 const state = {
   sector: 'All sectors',
   occupation: dataset.summary.defaultOccupation,
   search: '',
   view: 'models',
-  comparePrimary: defaultPrimaryModelId,
-  compareSecondary: defaultSecondaryModelId,
   selectedTaskId: null,
   selectedAttachmentId: null,
   previewTab: 'overview',
@@ -52,10 +44,11 @@ const decoder = document.createElement('textarea');
 const previewPromises = new Map();
 const viewTabs = [
   { id: 'overview', label: 'Overview' },
+  { id: 'models', label: 'Leaderboard' },
+  { id: 'efficiency', label: 'Economics' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'files', label: 'Files' },
-  { id: 'jaggedness', label: 'Jaggedness' },
-  { id: 'models', label: 'Leaderboard' },
+  { id: 'sources', label: 'Sources' },
 ];
 const previewTabs = [
   { id: 'overview', label: 'Overview' },
@@ -70,29 +63,10 @@ const occupationRecords = dataset.occupations.map((occupation) => ({
 }));
 const tasksByOccupation = groupBy(dataset.tasks, (task) => occupationKey(task.sector, task.occupation));
 const filesByOccupation = groupBy(dataset.attachments, (file) => occupationKey(file.sector, file.occupation));
-const scoresByOccupation = groupBy(dataset.occupationScores, (row) => occupationKey(row.sector, row.occupation));
 const filesByTask = groupBy(dataset.attachments, (file) => file.taskId);
 const tasksById = new Map(dataset.tasks.map((task) => [task.taskId, task]));
 const filesById = new Map(dataset.attachments.map((file) => [file.id, file]));
 const occupationMetaByKey = new Map(occupationRecords.map((occupation) => [occupation.key, occupation]));
-const modelById = new Map(archivedModels.map((model) => [model.modelId, model]));
-const comparePalette = ['#1f5c63', '#9a6d2f'];
-const sectorShortLabelByName = new Map([
-  ['Finance and Insurance', 'Finance'],
-  ['Government', 'Government'],
-  ['Health Care and Social Assistance', 'Health care'],
-  ['Information', 'Information'],
-  ['Manufacturing', 'Manufacturing'],
-  ['Professional, Scientific, and Technical Services', 'Prof. services'],
-  ['Real Estate and Rental and Leasing', 'Real estate'],
-  ['Retail Trade', 'Retail'],
-  ['Wholesale Trade', 'Wholesale'],
-]);
-const sectorDisplayMeta = dataset.sectors.map((sector) => ({
-  ...sector,
-  shortLabel: sectorShortLabelByName.get(sector.name) || sector.name,
-}));
-const sectorStatsByModel = buildSectorStatsByModel();
 
 function occupationKey(sector, occupation) {
   return `${sector}||${occupation}`;
@@ -116,19 +90,6 @@ function esc(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-function formatPercent(value) {
-  return `${(Number(value) * 100).toFixed(1)}%`;
-}
-
-function formatDelta(value) {
-  const points = Number(value) * 100;
-  return `${points >= 0 ? '+' : ''}${points.toFixed(1)} pts`;
-}
-
-function formatPoints(value) {
-  return `${(Number(value) * 100).toFixed(1)} pts`;
 }
 
 function formatElo(value) {
@@ -159,18 +120,31 @@ function formatInteger(value) {
   return Number(value || 0).toLocaleString('en-US');
 }
 
-function mean(values) {
-  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+function formatDecimal(value, digits = 1) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: digits, minimumFractionDigits: digits }) : '-';
 }
 
-function median(values) {
-  const sorted = values
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value))
-    .sort((a, b) => a - b);
-  if (!sorted.length) return 0;
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+function formatCurrency(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '-';
+  return n < 1
+    ? `$${n.toFixed(4)}`
+    : n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+}
+
+function modelMetricUrl(row) {
+  const url = row?.detailsUrl || '';
+  return url.startsWith('http') ? url : `https://artificialanalysis.ai${url}`;
+}
+
+function costTotal(row) {
+  return ['answer', 'reasoning', 'cacheWrite', 'cacheHit', 'input']
+    .reduce((sum, key) => sum + Number(row?.[key] || 0), 0);
+}
+
+function tokenTotal(row) {
+  return Number(row?.answer || 0) + Number(row?.reasoning || 0);
 }
 
 function shortText(value, length = 180) {
@@ -214,24 +188,23 @@ function formatVerifiedAt() {
   }).format(new Date(value));
 }
 
-function scoreMeaningSentence() {
-  return 'Archived Wins means the AI was judged better than the human expert; Wins+T also counts ties. Current overall rows use GDPval-AA Elo.';
-}
-
 function isGlobalView() {
-  return state.view === 'jaggedness' || state.view === 'models';
+  return ['models', 'efficiency', 'sources'].includes(state.view);
 }
 
 function needsPreviewColumn() {
-  return state.view !== 'models';
+  return !['models', 'efficiency', 'sources'].includes(state.view);
 }
 
 function toolbarScopeCopy() {
-  if (state.view === 'jaggedness') {
-    return 'Jaggedness compares models across the full benchmark, so sector and subfield filters are not used in this view.';
-  }
   if (state.view === 'models') {
     return 'The current GDPval-AA leaderboard is benchmark-wide, so sector and subfield filters are not used in this view.';
+  }
+  if (state.view === 'efficiency') {
+    return 'Economics uses the current GDPval-AA cost, token, and turn rows, so sector and subfield filters are not used in this view.';
+  }
+  if (state.view === 'sources') {
+    return 'Sources documents the data contract for v2; filters are not used in this view.';
   }
   return '';
 }
@@ -248,11 +221,6 @@ function visibleOccupations() {
 
 function currentOccupationRecord() {
   return occupationRecords.find((occupation) => occupation.name === state.occupation) || occupationRecords[0];
-}
-
-function currentScores() {
-  const occupation = currentOccupationRecord();
-  return [...(scoresByOccupation.get(occupation.key) || [])].sort((a, b) => b.winOrTieRate - a.winOrTieRate || b.winRate - a.winRate);
 }
 
 function currentTasks() {
@@ -286,116 +254,6 @@ function previewPayload(fileId) {
   return window.__GDPVAL_PREVIEWS[fileId] || null;
 }
 
-function buildSectorStatsByModel() {
-  const output = new Map();
-
-  for (const model of visibleModels) {
-    const sectorRows = sectorDisplayMeta.map((sectorMeta) => {
-      const rows = dataset.occupationScores
-        .filter((row) => row.modelId === model.modelId && row.sector === sectorMeta.name && !row.hidden)
-        .sort((a, b) => Number(a.winOrTieRate) - Number(b.winOrTieRate) || a.occupation.localeCompare(b.occupation));
-      if (!rows.length) {
-        return {
-          ...sectorMeta,
-          occupationCount: 0,
-          minWinOrTieRate: 0,
-          medianWinOrTieRate: 0,
-          maxWinOrTieRate: 0,
-          meanWinOrTieRate: 0,
-          overallWinOrTieRate: Number(model.overallWinOrTieRate || 0),
-          deltaMedianVsOverall: 0,
-          spread: 0,
-          weakest: null,
-          strongest: null,
-        };
-      }
-
-      const rates = rows.map((row) => Number(row.winOrTieRate || 0));
-      const minWinOrTieRate = rates[0];
-      const maxWinOrTieRate = rates[rates.length - 1];
-      const medianWinOrTieRate = median(rates);
-      const meanWinOrTieRate = mean(rates);
-      const overallWinOrTieRate = Number(model.overallWinOrTieRate || 0);
-
-      return {
-        ...sectorMeta,
-        occupationCount: rows.length,
-        minWinOrTieRate,
-        medianWinOrTieRate,
-        maxWinOrTieRate,
-        meanWinOrTieRate,
-        overallWinOrTieRate,
-        deltaMedianVsOverall: medianWinOrTieRate - overallWinOrTieRate,
-        spread: maxWinOrTieRate - minWinOrTieRate,
-        weakest: rows[0],
-        strongest: rows[rows.length - 1],
-      };
-    }).filter((row) => row.occupationCount > 0);
-
-    output.set(model.modelId, sectorRows);
-  }
-
-  return output;
-}
-
-function modelOccupationSummary(modelId) {
-  const rows = dataset.occupationScores
-    .filter((row) => row.modelId === modelId && !row.hidden)
-    .sort((a, b) => b.winOrTieRate - a.winOrTieRate || b.winRate - a.winRate);
-
-  if (!rows.length) {
-    return {
-      spread: 0,
-      best: null,
-      weakest: null,
-    };
-  }
-
-  const best = rows[0];
-  const weakest = rows[rows.length - 1];
-  return {
-    spread: Number(best.winOrTieRate || 0) - Number(weakest.winOrTieRate || 0),
-    best,
-    weakest,
-  };
-}
-
-function compareModel(modelId) {
-  return modelById.get(modelId) || visibleModels[0] || null;
-}
-
-function selectedCompareModels() {
-  const primary = compareModel(state.comparePrimary);
-  const secondary = state.compareSecondary && state.compareSecondary !== primary?.modelId
-    ? compareModel(state.compareSecondary)
-    : null;
-  return [primary, secondary].filter(Boolean);
-}
-
-function modelSectorSummary(modelId) {
-  const rows = sectorStatsByModel.get(modelId) || [];
-  const model = modelById.get(modelId);
-  if (!rows.length || !model) {
-    return {
-      meanDeviation: 0,
-      widest: null,
-      highestMedian: null,
-      lowestMedian: null,
-      overall: Number(model?.overallWinOrTieRate || 0),
-    };
-  }
-
-  const sortedByMedian = [...rows].sort((a, b) => b.medianWinOrTieRate - a.medianWinOrTieRate);
-  const sortedBySpread = [...rows].sort((a, b) => b.spread - a.spread);
-  return {
-    meanDeviation: mean(rows.map((row) => Math.abs(row.medianWinOrTieRate - Number(model.overallWinOrTieRate || 0)))),
-    widest: sortedBySpread[0],
-    highestMedian: sortedByMedian[0],
-    lowestMedian: sortedByMedian[sortedByMedian.length - 1],
-    overall: Number(model.overallWinOrTieRate || 0),
-  };
-}
-
 function syncState() {
   const bySector = occupationsBySector();
   const visible = visibleOccupations();
@@ -418,17 +276,6 @@ function syncState() {
     state.previewError = '';
   }
 
-  if (!visibleModels.some((model) => model.modelId === state.comparePrimary)) {
-    state.comparePrimary = defaultPrimaryModelId;
-  }
-
-  if (state.compareSecondary && !visibleModels.some((model) => model.modelId === state.compareSecondary)) {
-    state.compareSecondary = defaultSecondaryModelId;
-  }
-
-  if (state.compareSecondary && state.compareSecondary === state.comparePrimary) {
-    state.compareSecondary = visibleModels.find((model) => model.modelId !== state.comparePrimary)?.modelId || '';
-  }
 }
 
 function renderSectorSelect() {
@@ -448,10 +295,11 @@ function renderOccupationSelect() {
 function renderViewSwitch() {
   const counts = {
     overview: 'Key takeaways',
+    models: `${currentLeaderboardModels.length} current models`,
+    efficiency: `${(currentMetrics.costPerTask || []).length} cost rows`,
     tasks: `${currentTasks().length} public tasks`,
     files: `${currentFiles().length} linked files`,
-    jaggedness: `${dataset.sectors.length} sector spreads`,
-    models: `${currentLeaderboardModels.length} current models`,
+    sources: 'Data contract',
   };
   refs.viewSwitch.innerHTML = viewTabs.map((tab) => `
     <button class="switch-pill ${state.view === tab.id ? 'is-active' : ''}" data-action="select-view" data-view="${tab.id}">
@@ -463,8 +311,9 @@ function renderViewSwitch() {
 
 function renderOccupationFocusCard() {
   const occupation = currentOccupationRecord();
-  const scores = currentScores();
-  const topModel = scores[0];
+  const tasks = currentTasks();
+  const files = currentFiles();
+  const rubricItems = tasks.reduce((sum, task) => sum + Number(task.rubricCount || 0), 0);
   return `
     <div class="focus-top">
       <div>
@@ -473,56 +322,24 @@ function renderOccupationFocusCard() {
         <div class="badge-row">
           <span class="badge soft">${esc(occupation.sector)}</span>
           ${occupation.isInvestor ? '<span class="badge good">Investor subset</span>' : ''}
-          ${topModel ? `<span class="badge good">Top model: ${esc(topModel.label)}</span>` : '<span class="badge warn">No model score rows</span>'}
+          <span class="badge soft">${tasks.length} public tasks</span>
+          <span class="badge soft">${files.length} linked files</span>
         </div>
       </div>
     </div>
     <div class="focus-stats focus-stats-compact">
       <div class="mini-stat">
-        <div class="stat-label">Top Wins</div>
-        <strong>${topModel ? formatPercent(topModel.winRate) : 'N/A'}</strong>
-        <div class="note">best judged-better rate here</div>
+        <div class="stat-label">Tasks</div>
+        <strong>${tasks.length}</strong>
+        <div class="note">Hugging Face task rows</div>
       </div>
       <div class="mini-stat">
-        <div class="stat-label">Top Wins+T</div>
-        <strong>${topModel ? formatPercent(topModel.winOrTieRate) : 'N/A'}</strong>
-        <div class="note">best as-good-or-better rate</div>
+        <div class="stat-label">Rubric items</div>
+        <strong>${formatInteger(rubricItems)}</strong>
+        <div class="note">summed from task rubrics</div>
       </div>
     </div>
-    <p class="note focus-note">${esc(scoreMeaningSentence())}</p>
-  `;
-}
-
-function renderJaggednessFocusCard() {
-  const models = selectedCompareModels();
-  return `
-    <div class="focus-top">
-      <div>
-        <p class="section-kicker">Jaggedness</p>
-        <h2>Sector spread using all subfields</h2>
-        <p class="lede">Each sector below uses the archived OpenAI occupation-level score rows across all underlying GDPval subfields. The dot is the median subfield Wins+T for the selected model, and the vertical stem shows the weakest-to-strongest subfield average inside that sector.</p>
-        <div class="badge-row">
-          ${models.map((model) => `<span class="badge soft">${esc(model.label)}</span>`).join('')}
-        </div>
-      </div>
-    </div>
-    <div class="focus-stats focus-stats-triple">
-      <div class="mini-stat">
-        <div class="stat-label">Sectors</div>
-        <strong>${dataset.sectors.length}</strong>
-        <div class="note">actual GDPval sectors</div>
-      </div>
-      <div class="mini-stat">
-        <div class="stat-label">Signal</div>
-        <strong>Low · Median · High</strong>
-        <div class="note">within-sector subfield range</div>
-      </div>
-      <div class="mini-stat">
-        <div class="stat-label">Baseline</div>
-        <strong>Overall Wins+T</strong>
-        <div class="note">dashed reference line</div>
-      </div>
-    </div>
+    <p class="note focus-note">This subfield view is current for the public GDPval task corpus. v2 does not show model-by-occupation scores because the current GDPval-AA source publishes overall model metrics, not per-occupation score payloads.</p>
   `;
 }
 
@@ -544,12 +361,48 @@ function renderLeaderboardFocusCard() {
   `;
 }
 
+function renderEfficiencyFocusCard() {
+  const costRows = currentMetrics.costPerTask || [];
+  const tokenRows = currentMetrics.outputTokensPerTask || [];
+  const turnRows = currentMetrics.averageTurnsPerTask || [];
+  const cheapest = costRows[0];
+  return `
+    <div class="focus-top">
+      <div>
+        <p class="section-kicker">Economics</p>
+        <h2>Current cost, token, and turn metrics</h2>
+        <p class="lede">GDPval-AA v2 publishes current model economics alongside Elo. This tab uses those current rows directly, without archived occupation scores.</p>
+        <div class="badge-row">
+          <span class="badge soft">${costRows.length} cost rows</span>
+          <span class="badge soft">${tokenRows.length} token rows</span>
+          <span class="badge soft">${turnRows.length} turn rows</span>
+          ${cheapest ? `<span class="badge good">Lowest listed cost: ${esc(cheapest.label)} - ${formatCurrency(costTotal(cheapest))}</span>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSourcesFocusCard() {
+  return `
+    <div class="focus-top">
+      <div>
+        <p class="section-kicker">Sources</p>
+        <h2>v2 source contract</h2>
+        <p class="lede">This page separates current model metrics from the GDPval task corpus so the dashboard does not imply unsupported per-occupation current model scores.</p>
+      </div>
+    </div>
+  `;
+}
+
 function renderFocusCard() {
-  refs.focusCard.innerHTML = state.view === 'jaggedness'
-    ? renderJaggednessFocusCard()
-    : state.view === 'models'
-      ? renderLeaderboardFocusCard()
-      : renderOccupationFocusCard();
+  refs.focusCard.innerHTML = state.view === 'models'
+    ? renderLeaderboardFocusCard()
+    : state.view === 'efficiency'
+      ? renderEfficiencyFocusCard()
+      : state.view === 'sources'
+        ? renderSourcesFocusCard()
+        : renderOccupationFocusCard();
 }
 
 function renderTaskTable(tasks, actionLabel = 'Open detail', action = 'go-task') {
@@ -583,60 +436,94 @@ function renderTaskTable(tasks, actionLabel = 'Open detail', action = 'go-task')
     </div>
   `;
 }
-function renderPerformancePanel(scores) {
-  const rows = scores.slice(0, 8);
-  const max = Math.max(...rows.map((row) => row.winOrTieRate), 0.001);
+function renderCurrentLeaderboardPanel() {
+  const topRows = currentLeaderboardModels.slice(0, 6);
+  const topOpenAiModel = currentLeaderboardModels.find((model) => model.provider === 'openai');
+  const max = Math.max(...topRows.map((row) => Number(row.gdpvalAaElo || 0)), 1);
   return `
     <article class="panel">
       <div class="section-head">
         <div>
-          <p class="section-kicker">Performance</p>
-          <h3>Wins and wins+t</h3>
+          <p class="section-kicker">Current leaderboard</p>
+          <h3>GDPval-AA v2 Elo</h3>
         </div>
-        <span class="badge soft">${scores.length} models</span>
+        <span class="badge soft">${currentLeaderboardModels.length} models</span>
       </div>
+      <p class="note panel-subnote">Current overall rows come from ${esc(currentLeaderboardSource.name || 'Artificial Analysis GDPval-AA v2')}. They are not per-occupation rows.</p>
       <div class="bar-stack">
-        ${rows.map((row) => `
+        ${topRows.map((row) => `
           <div class="bar-row">
             <div class="row-head">
               <strong>${esc(row.label)}</strong>
-              <span class="note">${formatPercent(row.winRate)} wins · ${formatPercent(row.winOrTieRate)} wins+t</span>
+              <span class="note">${esc(row.providerLabel || row.provider || '-')} · ${formatElo(row.gdpvalAaElo)} Elo</span>
             </div>
             <div class="track">
-              <span class="fill-base" style="width:${(row.winOrTieRate / max) * 100}%"></span>
-              <span class="fill-strong" style="width:${(row.winRate / max) * 100}%"></span>
+              <span class="fill-base" style="width:${(Number(row.gdpvalAaElo || 0) / max) * 100}%"></span>
             </div>
           </div>
         `).join('')}
       </div>
+      ${topOpenAiModel ? `<p class="note panel-subnote">Top OpenAI row: ${esc(topOpenAiModel.label)} at ${formatElo(topOpenAiModel.gdpvalAaElo)} Elo.</p>` : ''}
     </article>
   `;
 }
 
-function renderDeltaPanel(scores) {
-  const rows = scores.slice(0, 8);
-  const max = Math.max(...rows.map((row) => Math.abs(row.deltaWinOrTieRate)), 0.001);
+function renderTaskScopePanel() {
   return `
     <article class="panel">
       <div class="section-head">
         <div>
-          <p class="section-kicker">Delta</p>
-          <h3>Versus overall</h3>
+          <p class="section-kicker">Task corpus</p>
+          <h3>Hugging Face GDPval gold subset</h3>
         </div>
-        <span class="badge soft">occupation minus overall</span>
+        <span class="badge soft">${dataset.summary.taskCount} tasks</span>
       </div>
-      <div class="bar-stack">
-        ${rows.map((row) => `
-          <div class="bar-row">
-            <div class="row-head">
-              <strong>${esc(row.label)}</strong>
-              <span class="note">${formatDelta(row.deltaWinOrTieRate)}</span>
-            </div>
-            <div class="track">
-              <span class="${row.deltaWinOrTieRate >= 0 ? 'fill-positive' : 'fill-negative'}" style="width:${(Math.abs(row.deltaWinOrTieRate) / max) * 100}%"></span>
-            </div>
-          </div>
-        `).join('')}
+      <div class="metric-grid">
+        <div class="metric-cell">
+          <div class="key-label">Sectors</div>
+          <div class="metric-value">${dataset.summary.sectorCount}</div>
+        </div>
+        <div class="metric-cell">
+          <div class="key-label">Occupations</div>
+          <div class="metric-value">${dataset.summary.occupationCount}</div>
+        </div>
+        <div class="metric-cell">
+          <div class="key-label">Linked files</div>
+          <div class="metric-value">${dataset.summary.attachmentCount}</div>
+        </div>
+        <div class="metric-cell">
+          <div class="key-label">Finance tasks</div>
+          <div class="metric-value">${dataset.summary.financeTaskCount}</div>
+        </div>
+      </div>
+      <p class="note panel-subnote">Hugging Face supplies prompts, rubrics, occupations, sectors, task IDs, and file links. It does not supply the current model leaderboard.</p>
+    </article>
+  `;
+}
+
+function renderSourceContractPanel() {
+  return `
+    <article class="panel">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker">No-Frankenstein contract</p>
+          <h3>What v2 will and will not claim</h3>
+        </div>
+        <span class="badge good">current-source aligned</span>
+      </div>
+      <div class="check-stack">
+        <div class="check-row compact">
+          <div class="row-head compact"><strong>Current model rankings</strong><span class="note">Artificial Analysis GDPval-AA v2 Elo</span></div>
+        </div>
+        <div class="check-row compact">
+          <div class="row-head compact"><strong>Current economics</strong><span class="note">AA cost, token, and turn rows where published</span></div>
+        </div>
+        <div class="check-row compact">
+          <div class="row-head compact"><strong>Task and file explorer</strong><span class="note">Hugging Face openai/gdpval public task corpus</span></div>
+        </div>
+        <div class="check-row compact">
+          <div class="row-head compact"><strong>Not shown in v2</strong><span class="note">Historical occupation score rows without a current source</span></div>
+        </div>
       </div>
     </article>
   `;
@@ -733,11 +620,10 @@ function renderTaskFiles(task) {
 function renderOverviewView() {
   const tasks = currentTasks();
   const files = currentFiles();
-  const scores = currentScores();
   return     `
     <div class="panel-grid two">
-      ${renderPerformancePanel(scores)}
-      ${renderDeltaPanel(scores)}
+      ${renderCurrentLeaderboardPanel()}
+      ${renderTaskScopePanel()}
     </div>
     <article class="panel">
       <div class="section-head">
@@ -751,7 +637,7 @@ function renderOverviewView() {
     </article>
     <div class="panel-grid two">
       ${renderAttachmentPanel(files)}
-      ${renderVerificationPanel()}
+      ${renderSourceContractPanel()}
     </div>
   `;
 }
@@ -857,9 +743,8 @@ function renderFilesView() {
 
 function renderModelsView() {
   const scores = currentLeaderboardModels;
-  const metricLabel = currentLeaderboardSource.metric === 'win_or_tie_rate' ? 'Wins+T' : 'Elo';
-  const metricValue = (row) =>
-    currentLeaderboardSource.metric === 'win_or_tie_rate' ? formatPercent(row.overallWinOrTieRate) : formatElo(row.gdpvalAaElo);
+  const metricLabel = 'Elo';
+  const metricValue = (row) => formatElo(row.gdpvalAaElo);
   return `
     <article class="panel">
       <div class="section-head">
@@ -869,7 +754,7 @@ function renderModelsView() {
         </div>
         <span class="badge soft">${scores.length} models</span>
       </div>
-      <p class="note panel-subnote">${esc(currentLeaderboardSource.name || 'Current leaderboard')} is benchmark-wide. It does not change with sector or subfield selection. Archived occupation rows below the rest of the dashboard still use OpenAI Wins/Wins+T.</p>
+      <p class="note panel-subnote">${esc(currentLeaderboardSource.name || 'Current leaderboard')} is benchmark-wide. It does not change with sector or subfield selection. v2 does not display per-occupation model scores unless a current source publishes them.</p>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
@@ -900,167 +785,39 @@ function renderModelsView() {
   `;
 }
 
-function renderJaggednessSelect(id, label, selectedId, options, { allowEmpty = false } = {}) {
-  return `
-    <label class="compare-field">
-      <span class="field-label">${esc(label)}</span>
-      <select id="${esc(id)}">
-        ${allowEmpty ? '<option value="">None</option>' : ''}
-        ${options.map((model) => `<option value="${esc(model.modelId)}" ${selectedId === model.modelId ? 'selected' : ''}>${esc(model.label)}</option>`).join('')}
-      </select>
-    </label>
-  `;
-}
-
-function jaggednessSeries(modelId) {
-  return sectorStatsByModel.get(modelId) || [];
-}
-
-function renderJaggednessChart(models) {
-  const series = models.map((model, index) => ({
-    model,
-    color: comparePalette[index % comparePalette.length],
-    rows: jaggednessSeries(model.modelId),
-    summary: modelSectorSummary(model.modelId),
-  }));
-  const sectorsInChart = sectorDisplayMeta.filter((sector) => series.some((item) => item.rows.some((row) => row.name === sector.name)));
-  const values = series.flatMap((item) => item.rows.flatMap((row) => [
-    row.minWinOrTieRate,
-    row.medianWinOrTieRate,
-    row.maxWinOrTieRate,
-  ]))
-    .concat(series.map((item) => Number(item.model.overallWinOrTieRate || 0)));
-  const minValue = values.length ? Math.max(0, Math.floor((Math.min(...values) - 0.03) * 20) / 20) : 0;
-  const maxValue = values.length ? Math.min(1, Math.ceil((Math.max(...values) + 0.03) * 20) / 20) : 1;
-  const range = Math.max(maxValue - minValue, 0.12);
-  const width = 920;
-  const height = 360;
-  const margin = { top: 24, right: 30, bottom: 82, left: 68 };
-  const innerWidth = width - margin.left - margin.right;
-  const innerHeight = height - margin.top - margin.bottom;
-  const xFor = (index) => margin.left + (innerWidth * index) / Math.max(sectorsInChart.length - 1, 1);
-  const yFor = (value) => margin.top + innerHeight - ((value - minValue) / range) * innerHeight;
-  const ticks = Array.from({ length: 5 }, (_, index) => maxValue - (range * index) / 4);
-  const offsets = models.length === 1
-    ? [0]
-    : models.map((_, index) => (index === 0 ? -16 : 16));
-
+function renderCostRows() {
+  const rows = currentMetrics.costPerTask || [];
   return `
     <article class="panel">
       <div class="section-head">
         <div>
-          <p class="section-kicker">Model comparison</p>
-          <h3>Median line with sector range</h3>
+          <p class="section-kicker">Cost</p>
+          <h3>Cost per task</h3>
         </div>
-        <span class="badge soft">${models.length === 1 ? 'single profile' : 'side by side'}</span>
+        <span class="badge soft">${rows.length} current rows</span>
       </div>
-      <div class="jagged-toolbar">
-        ${renderJaggednessSelect('jagged-primary', 'Primary model', state.comparePrimary, visibleModels)}
-        ${renderJaggednessSelect('jagged-secondary', 'Comparison model (optional)', state.compareSecondary, visibleModels.filter((model) => model.modelId !== state.comparePrimary), { allowEmpty: true })}
-      </div>
-      <p class="note panel-subnote">Every sector uses its full set of subfields. The dot marks the sector median, the stem spans the weakest to strongest subfield average, and the dashed line is the model's overall GDPval Wins+T. Here, 50% means the model matched or beat the human deliverable in about half of the subfield comparisons inside that sector.</p>
-      <div class="chart-legend">
-        ${series.map((item) => `
-          <div class="legend-chip">
-            <span class="legend-swatch" style="--swatch:${item.color};"></span>
-            <div>
-              <strong>${esc(item.model.label)}</strong>
-              <div class="note">Overall ${formatPercent(item.summary.overall)} · mean median deviation ${formatPoints(item.summary.meanDeviation)}</div>
-            </div>
-          </div>
-        `).join('')}
-      </div>
-      <div class="jagged-chart-shell">
-        <svg class="jagged-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Median and range of sector performance across subfields">
-          ${ticks.map((tick) => `
-            <g>
-              <line x1="${margin.left}" y1="${yFor(tick)}" x2="${width - margin.right}" y2="${yFor(tick)}" stroke="#d8d1c2" stroke-width="1" />
-              <text x="${margin.left - 12}" y="${yFor(tick) + 4}" text-anchor="end" fill="#5f695f" font-size="12">${esc(formatPercent(tick))}</text>
-            </g>
-          `).join('')}
-          ${series.map((item) => `
-            <g>
-              <line x1="${margin.left}" y1="${yFor(item.summary.overall)}" x2="${width - margin.right}" y2="${yFor(item.summary.overall)}" stroke="${item.color}" stroke-opacity="0.35" stroke-width="2" stroke-dasharray="6 6" />
-              ${item.rows.length ? `<path d="M ${sectorsInChart.map((sector, index) => {
-    const row = item.rows.find((entry) => entry.name === sector.name);
-    return row ? `${xFor(index) + offsets[series.indexOf(item)]} ${yFor(row.medianWinOrTieRate)}` : '';
-  }).filter(Boolean).join(' L ')}" fill="none" stroke="${item.color}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"></path>` : ''}
-              ${sectorsInChart.map((sector, index) => {
-    const row = item.rows.find((entry) => entry.name === sector.name);
-    if (!row) return '';
-    const x = xFor(index) + offsets[series.indexOf(item)];
-    const yMin = yFor(row.minWinOrTieRate);
-    const yMedian = yFor(row.medianWinOrTieRate);
-    const yMax = yFor(row.maxWinOrTieRate);
-    return `
-                <g>
-                  <line x1="${x}" y1="${yMax}" x2="${x}" y2="${yMin}" stroke="${item.color}" stroke-opacity="0.7" stroke-width="4" stroke-linecap="round" />
-                  <line x1="${x - 6}" y1="${yMax}" x2="${x + 6}" y2="${yMax}" stroke="${item.color}" stroke-width="2" stroke-linecap="round" />
-                  <line x1="${x - 6}" y1="${yMin}" x2="${x + 6}" y2="${yMin}" stroke="${item.color}" stroke-width="2" stroke-linecap="round" />
-                  <circle cx="${x}" cy="${yMedian}" r="6" fill="${item.color}" />
-                  <circle cx="${x}" cy="${yMedian}" r="11" fill="${item.color}" fill-opacity="0.14" />
-                </g>
-              `;
-  }).join('')}
-            </g>
-          `).join('')}
-          ${sectorsInChart.map((sector, index) => `
-            <g>
-              <line x1="${xFor(index)}" y1="${margin.top}" x2="${xFor(index)}" y2="${height - margin.bottom + 8}" stroke="rgba(185, 173, 152, 0.35)" stroke-width="1" />
-              <text x="${xFor(index)}" y="${height - 24}" text-anchor="middle" fill="#1d2429" font-size="13" font-weight="600">${esc(sector.shortLabel)}</text>
-              <text x="${xFor(index)}" y="${height - 8}" text-anchor="middle" fill="#5f695f" font-size="11">${formatInteger(sector.occupationCount || 0)} subfields</text>
-            </g>
-          `).join('')}
-        </svg>
-      </div>
-      <p class="note">Sharp jumps in the median line indicate cross-sector specialization. Wide stems indicate that the sector itself contains both easy and hard subfields for that model.</p>
-    </article>
-  `;
-}
-
-function renderJaggednessTable(models) {
-  return `
-    <article class="panel">
-      <div class="section-head">
-        <div>
-          <p class="section-kicker">Breakdown</p>
-          <h3>Sector min, median, and max</h3>
-        </div>
-      </div>
-      <p class="note panel-subnote">Each value is an occupation-level Wins+T average inside that sector. Median cells also show the difference from the model's overall GDPval Wins+T.</p>
+      <p class="note panel-subnote">Rows are sorted as published by AA. Total is calculated locally as answer + reasoning + cache write + cache hit + input.</p>
       <div class="table-wrap">
-        <table class="data-table jagged-table">
+        <table class="data-table">
           <thead>
             <tr>
-              <th rowspan="2">Sector</th>
-              <th rowspan="2">Subfields</th>
-              ${models.map((model) => `
-                <th colspan="4">${esc(model.label)}</th>
-              `).join('')}
-            </tr>
-            <tr>
-              ${models.map(() => `
-                <th>Low</th>
-                <th>Median</th>
-                <th>High</th>
-                <th>Span</th>
-              `).join('')}
+              <th>Model</th>
+              <th>Total</th>
+              <th>Answer</th>
+              <th>Reasoning</th>
+              <th>Cache write</th>
+              <th>Cache hit</th>
             </tr>
           </thead>
           <tbody>
-            ${sectorDisplayMeta.map((sector) => `
+            ${rows.map((row) => `
               <tr>
-                <td class="sector-cell"><strong>${esc(sector.name)}</strong></td>
-                <td>${formatInteger(sector.occupationCount || 0)}</td>
-                ${models.map((model) => {
-                  const row = jaggednessSeries(model.modelId).find((item) => item.name === sector.name);
-                  return `
-                    <td class="numeric-cell">${row ? formatPercent(row.minWinOrTieRate) : 'N/A'}</td>
-                    <td class="numeric-cell">${row ? `${formatPercent(row.medianWinOrTieRate)}<span class="note median-note">${formatDelta(row.deltaMedianVsOverall)}</span>` : 'N/A'}</td>
-                    <td class="numeric-cell">${row ? formatPercent(row.maxWinOrTieRate) : 'N/A'}</td>
-                    <td class="numeric-cell">${row ? `<span class="badge ${row.spread <= 0.22 ? 'good' : row.spread <= 0.38 ? 'soft' : 'warn'}">${formatPoints(row.spread)}</span>` : 'N/A'}</td>
-                  `;
-                }).join('')}
+                <td><a href="${esc(modelMetricUrl(row))}" target="_blank" rel="noreferrer"><strong>${esc(row.label)}</strong></a></td>
+                <td>${formatCurrency(costTotal(row))}</td>
+                <td>${formatCurrency(row.answer)}</td>
+                <td>${formatCurrency(row.reasoning)}</td>
+                <td>${formatCurrency(row.cacheWrite)}</td>
+                <td>${formatCurrency(row.cacheHit)}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -1070,11 +827,135 @@ function renderJaggednessTable(models) {
   `;
 }
 
-function renderJaggednessView() {
-  const models = selectedCompareModels();
+function renderTokenRows() {
+  const rows = currentMetrics.outputTokensPerTask || [];
   return `
-    ${renderJaggednessChart(models)}
-    ${renderJaggednessTable(models)}
+    <article class="panel">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker">Output</p>
+          <h3>Output tokens per task</h3>
+        </div>
+        <span class="badge soft">${rows.length} current rows</span>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Total</th>
+              <th>Answer</th>
+              <th>Reasoning</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                <td><a href="${esc(modelMetricUrl(row))}" target="_blank" rel="noreferrer"><strong>${esc(row.label)}</strong></a></td>
+                <td>${formatInteger(tokenTotal(row))}</td>
+                <td>${formatInteger(row.answer)}</td>
+                <td>${formatInteger(row.reasoning)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  `;
+}
+
+function renderTurnRows() {
+  const rows = currentMetrics.averageTurnsPerTask || [];
+  return `
+    <article class="panel">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker">Agent loop</p>
+          <h3>Average turns per task</h3>
+        </div>
+        <span class="badge soft">${rows.length} current rows</span>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Average turns</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                <td><a href="${esc(modelMetricUrl(row))}" target="_blank" rel="noreferrer"><strong>${esc(row.label)}</strong></a></td>
+                <td>${formatDecimal(row.averageTurnsPerTask, 1)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  `;
+}
+
+function renderEfficiencyView() {
+  return `
+    ${renderCostRows()}
+    ${renderTokenRows()}
+    ${renderTurnRows()}
+  `;
+}
+
+function renderSourcesView() {
+  const notes = dataset.leaderboards?.notes || [];
+  return `
+    <article class="panel">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker">Data contract</p>
+          <h3>Current v2 source map</h3>
+        </div>
+        <span class="badge good">no archived active tabs</span>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Dashboard surface</th>
+              <th>Source</th>
+              <th>Fields used</th>
+              <th>Current?</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Leaderboard</strong></td>
+              <td><a href="${esc(currentLeaderboardSource.url || 'https://artificialanalysis.ai/evaluations/gdpval-aa')}" target="_blank" rel="noreferrer">${esc(currentLeaderboardSource.name || 'Artificial Analysis GDPval-AA v2')}</a></td>
+              <td>Rank, provider, model, Elo, CI, release date</td>
+              <td><span class="badge good">Yes</span></td>
+            </tr>
+            <tr>
+              <td><strong>Economics</strong></td>
+              <td><a href="https://artificialanalysis.ai/evaluations/gdpval-aa" target="_blank" rel="noreferrer">Artificial Analysis GDPval-AA v2</a></td>
+              <td>Cost per task, output tokens per task, average turns per task</td>
+              <td><span class="badge good">Yes</span></td>
+            </tr>
+            <tr>
+              <td><strong>Tasks and files</strong></td>
+              <td><a href="${esc(dataset.source?.attachmentRoot || 'https://huggingface.co/datasets/openai/gdpval')}" target="_blank" rel="noreferrer">Hugging Face openai/gdpval</a></td>
+              <td>Task IDs, sectors, occupations, prompts, rubrics, file URLs</td>
+              <td><span class="badge good">Yes</span></td>
+            </tr>
+            <tr>
+              <td><strong>Per-occupation model scores</strong></td>
+              <td>Not shown in v2</td>
+              <td>Current source not available from AA/HF</td>
+              <td><span class="badge warn">Absent by design</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      ${notes.length ? `<div class="check-stack">${notes.map((note) => `<div class="check-row compact"><div class="row-head compact"><strong>Note</strong><span class="note">${esc(note)}</span></div></div>`).join('')}</div>` : ''}
+    </article>
   `;
 }
 
@@ -1091,8 +972,12 @@ function renderViewContent() {
     refs.viewContent.innerHTML = renderModelsView();
     return;
   }
-  if (state.view === 'jaggedness') {
-    refs.viewContent.innerHTML = renderJaggednessView();
+  if (state.view === 'efficiency') {
+    refs.viewContent.innerHTML = renderEfficiencyView();
+    return;
+  }
+  if (state.view === 'sources') {
+    refs.viewContent.innerHTML = renderSourcesView();
     return;
   }
   refs.viewContent.innerHTML = renderOverviewView();
@@ -1124,73 +1009,7 @@ function renderPreviewTable(table) {
   `;
 }
 
-function renderJaggednessSidebar() {
-  const models = selectedCompareModels();
-  refs.previewPanel.innerHTML = `
-    <div>
-      <p class="preview-kicker">Jaggedness</p>
-      <h3>How to read this view</h3>
-      <p class="empty-copy">Each sector uses every public GDPval subfield inside that sector. The line follows the median subfield result, while the stem shows the weakest to strongest subfield average.</p>
-    </div>
-    <div class="preview-stack">
-      <div class="preview-box">
-        <div class="preview-head">
-          <strong>Interpretation guide</strong>
-          <span class="badge soft">lower = steadier</span>
-        </div>
-        <div class="note">Use three signals together: the median line across sectors, the within-sector stem width, and the gap between each sector median and the model's overall baseline. This now uses the real GDPval sectors rather than bundled macro groups.</div>
-      </div>
-      ${models.map((model, index) => {
-        const summary = modelSectorSummary(model.modelId);
-        const occupationSummary = modelOccupationSummary(model.modelId);
-        return `
-          <div class="metric-card">
-            <div class="preview-head">
-              <strong>${esc(model.label)}</strong>
-              <span class="legend-chip compact">
-                <span class="legend-swatch" style="--swatch:${comparePalette[index % comparePalette.length]};"></span>
-                <span class="note">overall ${formatPercent(summary.overall)} · mean sector deviation ${formatPoints(summary.meanDeviation)}</span>
-              </span>
-            </div>
-            <div class="metric-grid">
-              <div class="metric-cell">
-                <div class="key-label">Highest sector median</div>
-                <div>${summary.highestMedian ? `${esc(summary.highestMedian.shortLabel)} · ${formatPercent(summary.highestMedian.medianWinOrTieRate)}` : 'N/A'}</div>
-              </div>
-              <div class="metric-cell">
-                <div class="key-label">Lowest sector median</div>
-                <div>${summary.lowestMedian ? `${esc(summary.lowestMedian.shortLabel)} · ${formatPercent(summary.lowestMedian.medianWinOrTieRate)}` : 'N/A'}</div>
-              </div>
-              <div class="metric-cell">
-                <div class="key-label">Widest sector span</div>
-                <div>${summary.widest ? `${esc(summary.widest.shortLabel)} · ${formatPoints(summary.widest.spread)}` : 'N/A'}</div>
-              </div>
-              <div class="metric-cell">
-                <div class="key-label">Best subfield</div>
-                <div>${occupationSummary.best ? `${esc(occupationSummary.best.occupation)} · ${formatPercent(occupationSummary.best.winOrTieRate)}` : 'N/A'}</div>
-              </div>
-              <div class="metric-cell">
-                <div class="key-label">Weakest subfield</div>
-                <div>${occupationSummary.weakest ? `${esc(occupationSummary.weakest.occupation)} · ${formatPercent(occupationSummary.weakest.winOrTieRate)}` : 'N/A'}</div>
-              </div>
-              <div class="metric-cell">
-                <div class="key-label">Best-vs-worst subfield</div>
-                <div class="metric-value">${formatPoints(occupationSummary.spread)}</div>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  `;
-}
-
 function renderPreviewPanel() {
-  if (state.view === 'jaggedness') {
-    renderJaggednessSidebar();
-    return;
-  }
-
   if (state.view === 'models') {
     refs.previewPanel.innerHTML = `
       <div>
@@ -1376,25 +1195,6 @@ refs.occupationSelect.addEventListener('change', (event) => {
 refs.occupationSearch.addEventListener('input', (event) => {
   state.search = String(event.target.value || '').trim().toLowerCase();
   renderAll();
-});
-
-document.addEventListener('change', (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLSelectElement)) return;
-
-  if (target.id === 'jagged-primary') {
-    state.comparePrimary = target.value || defaultPrimaryModelId;
-    if (state.compareSecondary === state.comparePrimary) {
-      state.compareSecondary = visibleModels.find((model) => model.modelId !== state.comparePrimary)?.modelId || '';
-    }
-    renderAll();
-    return;
-  }
-
-  if (target.id === 'jagged-secondary') {
-    state.compareSecondary = target.value && target.value !== state.comparePrimary ? target.value : '';
-    renderAll();
-  }
 });
 
 document.addEventListener('click', (event) => {
