@@ -38,7 +38,7 @@ const state = {
   sector: 'All sectors',
   occupation: dataset.summary.defaultOccupation,
   search: '',
-  view: 'overview',
+  view: 'models',
   comparePrimary: defaultPrimaryModelId,
   compareSecondary: defaultSecondaryModelId,
   selectedTaskId: null,
