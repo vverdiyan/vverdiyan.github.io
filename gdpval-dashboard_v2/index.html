@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GDPval Dashboard v2</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./config.js"></script>
+  <script defer src="./bootstrap.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="masthead">
+      <div class="masthead-copy">
+        <h1>GDPval Dashboard v2</h1>
+        <p class="masthead-subtitle">Comparing AI to human experts on real-world tasks in a given field.</p>
+      </div>
+    </header>
+
+    <section class="toolbar-card">
+      <div class="toolbar-grid">
+        <label class="field">
+          <span class="field-label">Sector</span>
+          <select id="sector-select"></select>
+        </label>
+
+        <label class="field field-wide">
+          <span class="field-label">Subfield</span>
+          <select id="occupation-select"></select>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Find</span>
+          <input id="occupation-search" type="search" placeholder="Search occupations">
+        </label>
+
+        <div class="field field-actions">
+          <span class="field-label">Sources</span>
+          <div class="link-row">
+            <a href="https://artificialanalysis.ai/evaluations/gdpval-aa" target="_blank" rel="noreferrer">Current leaderboard</a>
+            <a href="https://huggingface.co/datasets/openai/gdpval" target="_blank" rel="noreferrer">Hugging Face dataset</a>
+          </div>
+        </div>
+      </div>
+      <div class="toolbar-scope-note" id="toolbar-scope-note" hidden></div>
+      <div class="view-switch" id="view-switch"></div>
+    </section>
+
+    <main class="workspace">
+      <section class="main-column">
+        <section class="focus-card" id="focus-card"></section>
+        <section class="view-stack" id="view-content"></section>
+      </section>
+
+      <aside class="preview-column">
+        <section class="preview-card" id="preview-panel"></section>
+      </aside>
+    </main>
+  </div>
+</body>
+</html>
